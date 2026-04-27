@@ -135,3 +135,19 @@ https://SEU_DOMINIO/
 ```
 
 Depois do login, o sistema redireciona para `/api/admin`. O painel mostra resumo por cliente, contato, quantidade de bilhetes, valor apostado, premio possivel, status, mensagem enviada e os jogos detalhados de cada bilhete. A tela consulta o backend automaticamente e recarrega quando algum bilhete novo entra ou muda de status. Para exportar os mesmos dados em JSON, use `/api/admin?format=json`.
+
+## Suspender e reativar
+
+Para suspender o atendimento sem apagar banco, tokens, clientes ou historico:
+
+```bash
+npm run production:suspend
+```
+
+Para reativar:
+
+```bash
+npm run production:resume
+```
+
+Esses comandos alteram apenas `SERVICE_SUSPENDED` na Vercel e fazem novo deploy de producao.

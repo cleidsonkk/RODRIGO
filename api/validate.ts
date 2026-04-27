@@ -1,5 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { authorizeRequest } from "../src/modules/security.js";
+import { config } from "../src/config.js";
 import { prepareInboundForProcessing } from "../src/modules/inboundHandler.js";
 import { processValidationJob } from "../src/modules/processor.js";
 
@@ -30,6 +31,11 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   if (!recipientId || !mensagem) {
     res.status(400).json({ ok: false, error: "destinatario e mensagem sao obrigatorios" });
+    return;
+  }
+
+  if (config.serviceSuspended) {
+    res.status(423).json({ ok: false, error: "service_suspended" });
     return;
   }
 

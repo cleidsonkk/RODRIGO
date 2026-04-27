@@ -33,6 +33,9 @@ export const config = {
   port: intFromEnv(process.env.PORT, 3000),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
+  serviceSuspended: boolFromEnv(process.env.SERVICE_SUSPENDED, false),
+  suspensionMessage: process.env.SUSPENSION_MESSAGE?.trim()
+    || "Sistema temporariamente indisponivel. Fale com o administrador.",
   targetUrl: process.env.TARGET_URL ?? "https://www.esportenetvip.bet/bilhete3.aspx",
   headless: boolFromEnv(process.env.HEADLESS, true),
   browserTimeoutMs: intFromEnv(process.env.BROWSER_TIMEOUT_MS, 10_000),

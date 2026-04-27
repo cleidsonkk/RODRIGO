@@ -1310,6 +1310,11 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
+  if (config.serviceSuspended) {
+    res.status(423).send("Sistema temporariamente indisponivel.");
+    return;
+  }
+
   if (!isAdminRequestAuthorized(req.headers)) {
     res.setHeader("WWW-Authenticate", 'Basic realm="Validador Admin", charset="UTF-8"');
     res.status(401).send("Autenticação obrigatória.");

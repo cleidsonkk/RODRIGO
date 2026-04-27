@@ -2,6 +2,8 @@ import { waitUntil } from "@vercel/functions";
 import { prepareInboundForProcessing } from "../../src/modules/inboundHandler.js";
 import { processValidationJob } from "../../src/modules/processor.js";
 import { authorizeRequest } from "../../src/modules/security.js";
+import { config } from "../../src/config.js";
+import { sendText } from "../../src/modules/notifier.js";
 import { parseInboundWhatsAppMessage } from "../../src/modules/webhookParser.js";
 
 export default async function handler(req: any, res: any): Promise<void> {
@@ -41,6 +43,12 @@ export default async function handler(req: any, res: any): Promise<void> {
 
   if (!inbound) {
     res.status(202).json({ ok: true, ignored: true, reason: "mensagem_sem_texto_ou_numero" });
+    return;
+  }
+
+  if (config.serviceSuspended) {
+    await sendText(inbound.channel, inbound.recipientId, config.suspensionMessage).catch(() => undefined);
+    res.status(202).json({ ok: true, suspended: true });
     return;
   }
 
