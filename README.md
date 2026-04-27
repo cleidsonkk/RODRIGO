@@ -1,6 +1,6 @@
 # Validador automático de bilhetes
 
-Sistema Node.js/TypeScript para receber mensagens de WhatsApp, extrair código de bilhete, consultar `https://www.esportese.bet/bilhete3.aspx`, confirmar pré-bilhete quando encontrado e responder o cliente com texto e comprovante.
+Sistema Node.js/TypeScript para receber mensagens de WhatsApp, extrair código de bilhete, consultar `https://www.esportenetvip.bet/bilhete3.aspx`, confirmar pré-bilhete quando encontrado e responder o cliente com texto e comprovante.
 
 Arquitetura alvo: Vercel Functions + Neon PostgreSQL + WhatsApp API configurável ou Telegram Bot API.
 

@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
   const page = await context.newPage();
 
-  await page.goto(process.env.TARGET_URL ?? "https://www.esportese.bet/", {
+  await page.goto(process.env.TARGET_URL ?? "https://www.esportenetvip.bet/", {
     waitUntil: "domcontentloaded",
     timeout: 30_000
   });
@@ -74,7 +74,8 @@ async function main(): Promise<void> {
   let sessionId = "";
 
   for (let attempt = 0; attempt < 180; attempt += 1) {
-    const cookies = await context.cookies("https://www.esportese.bet");
+    const targetOrigin = new URL(process.env.TARGET_URL ?? "https://www.esportenetvip.bet/").origin;
+    const cookies = await context.cookies(targetOrigin);
     const loginCookie = cookies.find((cookie) => cookie.name === "usercookie42")
       ?? cookies.find((cookie) => cookie.name === "usercookie52");
     const sessionCookie = cookies.find((cookie) => cookie.name === "ASP.NET.SessionId");

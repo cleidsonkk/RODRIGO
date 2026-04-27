@@ -33,7 +33,7 @@ export const config = {
   port: intFromEnv(process.env.PORT, 3000),
   publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
-  targetUrl: process.env.TARGET_URL ?? "https://www.esportese.bet/bilhete3.aspx",
+  targetUrl: process.env.TARGET_URL ?? "https://www.esportenetvip.bet/bilhete3.aspx",
   headless: boolFromEnv(process.env.HEADLESS, true),
   browserTimeoutMs: intFromEnv(process.env.BROWSER_TIMEOUT_MS, 10_000),
   confirmPreTicket: boolFromEnv(process.env.CONFIRM_PRE_TICKET, true),
@@ -73,7 +73,7 @@ export const config = {
     password: process.env.ADMIN_PASSWORD ?? ""
   },
   targetSite: {
-    apiBaseUrl: process.env.TARGET_API_BASE_URL ?? "https://www.esportese.bet/futebolapi",
+    apiBaseUrl: process.env.TARGET_API_BASE_URL ?? "https://www.esportenetvip.bet/futebolapi",
     authToken: process.env.TARGET_AUTH_TOKEN ?? "",
     userId: process.env.TARGET_USER_ID ?? "0",
     rToken: process.env.TARGET_RTOKEN ?? "",
