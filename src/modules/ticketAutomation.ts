@@ -122,7 +122,10 @@ export class TicketAutomation {
             mensagem_erro: confirmation.error ?? "Confirmacao nao concluida",
             status: confirmation.error?.includes("pendente de confirmacao") ? "encontrado" : "erro",
             codigo_bilhete: codigo,
-            dados_bilhete: apiTicketData
+            dados_bilhete: {
+              ...apiTicketData,
+              confirmacao: confirmation.data
+            }
           };
         }
 

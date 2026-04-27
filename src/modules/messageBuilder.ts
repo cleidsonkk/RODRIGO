@@ -20,6 +20,135 @@ function getStatusDescription(result: MessageInput): string | null {
   return typeof statusDescription === "string" && statusDescription.trim() ? statusDescription.trim() : null;
 }
 
+function normalizeText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return "";
+}
+
+function ticketItems(data: Record<string, unknown> | null): Array<Record<string, any>> {
+  if (!data || typeof data !== "object") {
+    return [];
+  }
+
+  const payload = data as Record<string, any>;
+
+  if (Array.isArray(payload.itens)) {
+    return payload.itens;
+  }
+
+  if (Array.isArray(payload.itensBolao)) {
+    return payload.itensBolao;
+  }
+
+  return [];
+}
+
+function gameLabel(item: Record<string, any>): string {
+  const home = pickString(item.casa_nome, item.time_casa, item.home, item.casa);
+  const away = pickString(item.visit_nome, item.time_visitante, item.away, item.visitante);
+
+  if (home && away) {
+    return `${home} x ${away}`;
+  }
+
+  return pickString(item.jogo, item.evento, item.descricao, item.nome) || "jogo do bilhete";
+}
+
+function gameDetailLines(item: Record<string, any>): string[] {
+  const lines = [`Jogo: ${gameLabel(item)}`];
+  const date = pickString(item.dt_jogo, item.data, item.date);
+  const market = pickString(item.odd_desc, item.mercado, item.market);
+  const selection = pickString(item.descricao, item.palpite, item.selection);
+
+  if (date) {
+    lines.push(`Data: ${date}`);
+  }
+
+  if (market || selection) {
+    lines.push(`Palpite: ${[market, selection].filter(Boolean).join(" - ")}`);
+  }
+
+  return lines;
+}
+
+function findTimeLimitGame(data: Record<string, unknown> | null, errorText: string): Record<string, any> | null {
+  const items = ticketItems(data);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  const normalizedError = normalizeText(errorText);
+  const matching = items.find((item) => {
+    const searchable = normalizeText([
+      item.casa_nome,
+      item.time_casa,
+      item.home,
+      item.casa,
+      item.visit_nome,
+      item.time_visitante,
+      item.away,
+      item.visitante,
+      item.descricao,
+      item.palpite,
+      item.odd_desc,
+      item.mercado
+    ].map((value) => pickString(value)).filter(Boolean).join(" "));
+
+    return searchable && normalizedError.includes(searchable);
+  });
+
+  return matching ?? (items.length === 1 ? items[0] : null);
+}
+
+function isTimeLimitError(message: string | null | undefined): boolean {
+  const normalized = normalizeText(message ?? "");
+  return normalized.includes("horario")
+    || normalized.includes("hora limite")
+    || normalized.includes("limite de jogo")
+    || normalized.includes("jogo atingido")
+    || normalized.includes("evento encerrado")
+    || normalized.includes("prazo")
+    || normalized.includes("tempo limite");
+}
+
+function buildTimeLimitMessage(result: MessageInput): string {
+  const errorText = result.mensagem_erro?.trim() ?? "";
+  const game = findTimeLimitGame(result.dados_bilhete ?? null, errorText);
+  const lines = [
+    "⚠️ Não foi possível confirmar este bilhete.",
+    `Código: ${result.codigo_bilhete}`,
+    "Motivo: o horário limite de um jogo foi atingido."
+  ];
+
+  if (game) {
+    lines.push("", ...gameDetailLines(game));
+  }
+
+  if (errorText) {
+    lines.push("", `Retorno do site: ${errorText.slice(0, 300)}`);
+  }
+
+  lines.push("", "Refaça o bilhete sem esse jogo ou envie outro código para validação.");
+  return lines.join("\n");
+}
+
 export function buildCustomerMessage(result: MessageInput): string {
   if (result.status === "limite_excedido") {
     const credit = result.credit;
@@ -76,6 +205,10 @@ export function buildCustomerMessage(result: MessageInput): string {
       "⚠️ Não conseguimos localizar o código informado.",
       "Verifique se digitou corretamente e envie novamente."
     ].join("\n");
+  }
+
+  if (isTimeLimitError(result.mensagem_erro)) {
+    return buildTimeLimitMessage(result);
   }
 
   return [
