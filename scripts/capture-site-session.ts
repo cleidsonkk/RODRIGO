@@ -57,12 +57,18 @@ function parseLoginModel(value: string): SiteLoginModel | null {
   return null;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main(): Promise<void> {
   const browser = await chromium.launch({ headless: false });
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
   const page = await context.newPage();
+  const targetOrigin = new URL(process.env.TARGET_URL ?? "https://www.esportenetvip.bet/").origin;
+  const loginUrl = process.env.TARGET_LOGIN_URL || `${targetOrigin}/`;
 
-  await page.goto(process.env.TARGET_URL ?? "https://www.esportenetvip.bet/", {
+  await page.goto(loginUrl, {
     waitUntil: "domcontentloaded",
     timeout: 30_000
   });
@@ -74,7 +80,6 @@ async function main(): Promise<void> {
   let sessionId = "";
 
   for (let attempt = 0; attempt < 180; attempt += 1) {
-    const targetOrigin = new URL(process.env.TARGET_URL ?? "https://www.esportenetvip.bet/").origin;
     const cookies = await context.cookies(targetOrigin);
     const loginCookie = cookies.find((cookie) => cookie.name === "usercookie42")
       ?? cookies.find((cookie) => cookie.name === "usercookie52");
@@ -92,7 +97,7 @@ async function main(): Promise<void> {
       break;
     }
 
-    await page.waitForTimeout(1_000);
+    await delay(1_000);
   }
 
   if (!login?.ID || !login.AUTHTOKEN) {
