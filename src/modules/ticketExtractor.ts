@@ -1,6 +1,6 @@
 import type { ExtractionResult } from "../types.js";
 
-const CODE_PATTERN = /(?:^|[^A-Za-z0-9])([A-Za-z0-9]{4})[\s-]*([A-Za-z0-9]{4})[\s-]*([A-Za-z0-9]{4})(?![A-Za-z0-9])/g;
+const CODE_PATTERN = /(?:^|[^A-Za-z0-9])([A-Za-z0-9]{4,5})[\s-]*([A-Za-z0-9]{4,5})[\s-]*([A-Za-z0-9]{4,5})(?![A-Za-z0-9])/g;
 
 type Candidate = {
   index: number;
@@ -9,6 +9,11 @@ type Candidate = {
 
 function hasDigit(value: string): boolean {
   return /\d/.test(value);
+}
+
+function isSupportedLength(groups: [string, string, string]): boolean {
+  const compactLength = groups.join("").length;
+  return compactLength === 12 || compactLength === 15;
 }
 
 export function extractTicketCode(message: string): ExtractionResult {
@@ -36,10 +41,14 @@ export function extractTicketCodes(message: string): string[] {
   let match: RegExpExecArray | null;
 
   while ((match = CODE_PATTERN.exec(original)) !== null) {
-    candidates.push({
-      index: match.index,
-      groups: [match[1], match[2], match[3]]
-    });
+    const groups: [string, string, string] = [match[1], match[2], match[3]];
+
+    if (isSupportedLength(groups) && hasDigit(groups.join(""))) {
+      candidates.push({
+        index: match.index,
+        groups
+      });
+    }
 
     CODE_PATTERN.lastIndex = match.index + 1;
   }

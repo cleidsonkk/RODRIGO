@@ -106,6 +106,11 @@ const extraction = extractTicketCode(ticketMessage);
 assert(extraction.codigo_encontrado, "single compact ticket code must be found");
 assertEqual(extraction.codigo, "V072 ZHQW NZV9", "single ticket code must be normalized");
 
+const longTicketMessage = "confirma A73BQ6EKQN5FLL6";
+const longExtraction = extractTicketCode(longTicketMessage);
+assert(longExtraction.codigo_encontrado, "15-character compact ticket code must be found");
+assertEqual(longExtraction.codigo, "A73BQ 6EKQN 5FLL6", "15-character ticket code must be normalized in 5-character groups");
+
 const spacedExtraction = extractTicketCode("V072 ZHQW NZV9");
 assert(spacedExtraction.codigo_encontrado, "spaced ticket code must be found");
 assertEqual(spacedExtraction.codigo, "V072 ZHQW NZV9", "spaced ticket code must stay normalized");

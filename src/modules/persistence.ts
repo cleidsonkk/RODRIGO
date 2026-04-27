@@ -106,13 +106,15 @@ export async function recordExtractionFailure(input: {
   mensagem: string;
   externalMessageId: string | null;
   raw: unknown;
-}): Promise<void> {
+  customerMessage: string;
+}): Promise<string | null> {
   if (!hasDatabase()) {
-    return;
+    return null;
   }
 
   const sql = getSql();
-  await sql`
+  const id = randomUUID();
+  const rows = await sql`
     INSERT INTO validation_jobs (
       id,
       external_message_id,
@@ -121,23 +123,28 @@ export async function recordExtractionFailure(input: {
       original_message,
       ticket_code,
       status,
+      customer_message,
       raw_payload,
       processed_at
     )
     VALUES (
-      ${randomUUID()},
+      ${id},
       ${input.externalMessageId},
       ${input.channel},
       ${input.recipientId},
       ${input.mensagem},
       ${null},
       'codigo_nao_encontrado',
+      ${input.customerMessage},
       ${JSON.stringify(input.raw)}::jsonb,
       now()
     )
     ON CONFLICT (channel, external_message_id) WHERE external_message_id IS NOT NULL
     DO NOTHING
+    RETURNING id
   `;
+
+  return rows.length > 0 ? String(rows[0].id) : null;
 }
 
 export async function markJobProcessing(jobId: string): Promise<void> {

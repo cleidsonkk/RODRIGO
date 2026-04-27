@@ -14,7 +14,7 @@ import {
   buildTelegramWelcomeMessage
 } from "./messageBuilder.js";
 import { requestTelegramContact, sendText } from "./notifier.js";
-import { createValidationJob, hasDatabase, recordExtractionFailure } from "./persistence.js";
+import { createValidationJob, hasDatabase, markDeliveryStatus, recordExtractionFailure } from "./persistence.js";
 import { extractTicketCode, extractTicketCodes } from "./ticketExtractor.js";
 
 export type InboundHandleResult =
@@ -85,14 +85,38 @@ export async function prepareInboundForProcessing(inbound: InboundMessage): Prom
       return { kind: "ignored", reason: "telegram_command" };
     }
 
-    await sendText(inbound.channel, inbound.recipientId, buildExtractionFailureMessage());
-    await recordExtractionFailure({
+    const message = buildExtractionFailureMessage();
+    const failureJobId = await recordExtractionFailure({
       channel: inbound.channel,
       recipientId: inbound.recipientId,
       mensagem: inbound.mensagem,
       externalMessageId: inbound.externalMessageId,
-      raw: inbound.raw
+      raw: inbound.raw,
+      customerMessage: message
     });
+
+    try {
+      await sendText(inbound.channel, inbound.recipientId, message);
+      if (failureJobId) {
+        await markDeliveryStatus({
+          jobId: failureJobId,
+          textSent: true,
+          imageSent: false,
+          deliveryError: null
+        });
+      }
+    } catch (error) {
+      if (failureJobId) {
+        await markDeliveryStatus({
+          jobId: failureJobId,
+          textSent: false,
+          imageSent: false,
+          deliveryError: error instanceof Error ? error.message : String(error)
+        });
+      }
+
+      throw error;
+    }
     await notifyAdminSafely(notifyAdminExtractionFailure(inbound, "codigo_invalido"), {
       channel: inbound.channel,
       recipientId: inbound.recipientId,
