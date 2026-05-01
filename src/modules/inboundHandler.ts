@@ -45,8 +45,8 @@ export async function prepareInboundForProcessing(inbound: InboundMessage): Prom
 
     if (!authorized.allowed) {
       const message = authorized.reason === "blocked"
-        ? "Seu numero esta temporariamente bloqueado para validar bilhetes. Se precisar de suporte, fale com o administrador."
-        : "Seu numero nao esta cadastrado para validar bilhetes neste atendimento. Solicite a liberacao ao administrador.";
+        ? "Seu número está temporariamente bloqueado para validar bilhetes. Se precisar de suporte, fale com o administrador."
+        : "Seu número não está cadastrado para validar bilhetes neste atendimento. Solicite a liberação ao administrador.";
 
       await sendText(inbound.channel, inbound.recipientId, message);
       return { kind: "ignored", reason: authorized.reason };
