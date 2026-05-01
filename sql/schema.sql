@@ -139,10 +139,14 @@ CREATE INDEX IF NOT EXISTS admin_notification_targets_enabled_idx
 
 CREATE TABLE IF NOT EXISTS authorized_phone_ids (
   phone text PRIMARY KEY,
+  display_name text,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE authorized_phone_ids
+  ADD COLUMN IF NOT EXISTS display_name text;
 
 CREATE INDEX IF NOT EXISTS authorized_phone_ids_enabled_idx
   ON authorized_phone_ids (enabled, updated_at DESC);

@@ -5,6 +5,7 @@ let sqlClient: NeonQueryFunction<false, false> | null = null;
 
 export type AuthorizedPhoneId = {
   phone: string;
+  displayName: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -87,37 +88,41 @@ export async function listAuthorizedPhoneIds(): Promise<AuthorizedPhoneId[]> {
   }
 
   const rows = await getSql().query(`
-    SELECT phone, enabled, created_at, updated_at
+    SELECT phone, display_name, enabled, created_at, updated_at
     FROM authorized_phone_ids
     ORDER BY enabled DESC, updated_at DESC, phone ASC
   `);
 
   return (rows as Array<Record<string, any>>).map((row) => ({
     phone: String(row.phone ?? ""),
+    displayName: typeof row.display_name === "string" && row.display_name.trim() ? row.display_name.trim() : null,
     enabled: Boolean(row.enabled),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()
   }));
 }
 
-export async function upsertAuthorizedPhoneId(phone: string): Promise<AuthorizedPhoneId> {
+export async function upsertAuthorizedPhoneId(phone: string, displayName: string | null): Promise<AuthorizedPhoneId> {
   if (!config.databaseUrl) {
     throw new Error("DATABASE_URL nao configurada");
   }
 
   const canonicalPhone = canonicalAuthorizedPhone(phone);
+  const normalizedDisplayName = typeof displayName === "string" && displayName.trim() ? displayName.trim() : null;
   const rows = await getSql().query(`
-    INSERT INTO authorized_phone_ids (phone, enabled, created_at, updated_at)
-    VALUES ($1, true, now(), now())
+    INSERT INTO authorized_phone_ids (phone, display_name, enabled, created_at, updated_at)
+    VALUES ($1, $2, true, now(), now())
     ON CONFLICT (phone) DO UPDATE SET
+      display_name = EXCLUDED.display_name,
       enabled = true,
       updated_at = now()
-    RETURNING phone, enabled, created_at, updated_at
-  `, [canonicalPhone]);
+    RETURNING phone, display_name, enabled, created_at, updated_at
+  `, [canonicalPhone, normalizedDisplayName]);
 
   const row = rows[0] as Record<string, any>;
   return {
     phone: String(row.phone ?? canonicalPhone),
+    displayName: typeof row.display_name === "string" && row.display_name.trim() ? row.display_name.trim() : null,
     enabled: Boolean(row.enabled),
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString()

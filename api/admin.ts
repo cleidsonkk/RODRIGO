@@ -171,6 +171,7 @@ async function handleAdminAction(req: any, res: any): Promise<void> {
 
   if (action === "add_authorized_phone") {
     const phone = form.get("authorizedPhone") ?? "";
+    const displayName = form.get("authorizedPhoneName");
     const digits = phone.replace(/\D/g, "");
 
     if (!digits) {
@@ -178,9 +179,10 @@ async function handleAdminAction(req: any, res: any): Promise<void> {
       return;
     }
 
-    const saved = await upsertAuthorizedPhoneId(digits);
+    const saved = await upsertAuthorizedPhoneId(digits, displayName);
     await recordAdminCleanupEvent(req, "admin_upsert_authorized_phone", {
       phone: saved.phone,
+      displayName: saved.displayName,
       enabled: saved.enabled
     });
     redirectToAdmin(res, "ID autorizado salvo com sucesso.");
@@ -760,6 +762,10 @@ function renderAuthorizedPhoneIdsPanel(items: AuthorizedPhoneId[]): string {
           <span>Numero do celular</span>
           <input name="authorizedPhone" inputmode="numeric" placeholder="Ex.: 5579999105302" required>
         </label>
+        <label>
+          <span>Nome</span>
+          <input name="authorizedPhoneName" placeholder="Ex.: Neno">
+        </label>
         <button type="submit">Salvar ID autorizado</button>
       </form>
 
@@ -767,7 +773,8 @@ function renderAuthorizedPhoneIdsPanel(items: AuthorizedPhoneId[]): string {
         ${items.length === 0 ? `<div class="empty-block">Nenhum ID autorizado cadastrado ainda.</div>` : items.map((item) => `
           <article class="authorized-card">
             <div>
-              <strong>${escapeHtml(item.phone)}</strong>
+              <strong>${escapeHtml(item.displayName ?? "Sem nome informado")}</strong>
+              <small>ID: ${escapeHtml(item.phone)}</small>
               <small>Status: ${item.enabled ? "Liberado" : "Bloqueado"}</small>
               <small>Criado em ${escapeHtml(formatDate(item.createdAt))} · Atualizado em ${escapeHtml(formatDate(item.updatedAt))}</small>
             </div>
@@ -999,7 +1006,7 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
     }
     .authorized-create-form {
       display: grid;
-      grid-template-columns: minmax(220px, 320px) auto;
+      grid-template-columns: minmax(220px, 320px) minmax(180px, 260px) auto;
       gap: 10px;
       align-items: end;
       margin-bottom: 14px;
