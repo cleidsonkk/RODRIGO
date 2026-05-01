@@ -12,10 +12,28 @@ import {
 } from "./credit.js";
 import { buildCustomerMessage } from "./messageBuilder.js";
 import { sendImage, sendText } from "./notifier.js";
-import { markDeliveryStatus, markJobFinished, markJobProcessing } from "./persistence.js";
+import { markDeliveryStatus, markJobFinished, markJobProcessing, recordOutboundNotificationSafely } from "./persistence.js";
 import { TicketAutomation } from "./ticketAutomation.js";
 
 const automation = new TicketAutomation();
+
+async function sendImageWithRetry(channel: ValidationJob["channel"], recipientId: string, imageBase64: string, caption: string, attempts = 3) {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await sendImage(channel, recipientId, imageBase64, caption);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Falha ao enviar comprovante");
+}
 
 export async function processValidationJob(job: ValidationJob): Promise<void> {
   log("info", "Iniciando validação de bilhete", {
@@ -66,12 +84,33 @@ export async function processValidationJob(job: ValidationJob): Promise<void> {
   let imageSent = false;
 
   try {
-    await sendText(job.channel, job.recipientId, message);
+    const textResult = await sendText(job.channel, job.recipientId, message);
     textSent = true;
+    await recordOutboundNotificationSafely({
+      scope: "customer",
+      recipientId: job.recipientId,
+      channel: job.channel,
+      kind: textResult.kind,
+      result: textResult,
+      jobId: job.id
+    });
 
     if (result.screenshot_base64) {
-      await sendImage(job.channel, job.recipientId, result.screenshot_base64, `Comprovante do bilhete ${job.codigo}`);
+      const imageResult = await sendImageWithRetry(
+        job.channel,
+        job.recipientId,
+        result.screenshot_base64,
+        `Comprovante do bilhete ${job.codigo}`
+      );
       imageSent = true;
+      await recordOutboundNotificationSafely({
+        scope: "customer",
+        recipientId: job.recipientId,
+        channel: job.channel,
+        kind: imageResult.kind,
+        result: imageResult,
+        jobId: job.id
+      });
     }
 
     await markDeliveryStatus({

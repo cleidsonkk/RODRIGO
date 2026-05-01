@@ -52,7 +52,7 @@ export class TicketAutomation {
           };
 
           if (!config.confirmPreTicket) {
-            const screenshot = await this.captureScreenshot(page, codigo).catch(() => null);
+            const screenshot = await this.captureScreenshotWithRetry(page, codigo).catch(() => null);
 
             return {
               confirmado: false,
@@ -97,7 +97,7 @@ export class TicketAutomation {
             }).catch(() => undefined);
 
             await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => undefined);
-            const screenshot = await this.captureScreenshot(page, confirmation.code ?? codigo).catch(() => null);
+            const screenshot = await this.captureScreenshotWithRetry(page, confirmation.code ?? codigo).catch(() => null);
 
             return {
               confirmado: true,
@@ -130,7 +130,7 @@ export class TicketAutomation {
         }
 
         const screenshot = search.status === "erro"
-          ? await this.captureScreenshot(page, codigo).catch(() => null)
+          ? await this.captureScreenshotWithRetry(page, codigo).catch(() => null)
           : null;
 
         return {
@@ -157,7 +157,7 @@ export class TicketAutomation {
         : search.dados_bilhete;
 
       if (!config.confirmPreTicket) {
-        const screenshot = await this.captureScreenshot(page, codigo);
+        const screenshot = await this.captureScreenshotWithRetry(page, codigo);
 
         return {
           confirmado: false,
@@ -178,7 +178,7 @@ export class TicketAutomation {
       ]);
 
       if (!confirmButton) {
-        const screenshot = await this.captureScreenshot(page, codigo);
+        const screenshot = await this.captureScreenshotWithRetry(page, codigo);
 
         return {
           confirmado: false,
@@ -206,7 +206,7 @@ export class TicketAutomation {
       await page.waitForTimeout(1_000);
       const text = await page.locator("body").innerText({ timeout: 5_000 }).catch(() => "");
       const confirmationCode = this.extractConfirmationCode(text);
-      const screenshot = await this.captureScreenshot(page, codigo);
+      const screenshot = await this.captureScreenshotWithRetry(page, codigo);
 
       return {
         confirmado: true,
@@ -417,7 +417,11 @@ export class TicketAutomation {
   }
 
   private async captureScreenshot(page: Page, codigo: string): Promise<{ path: string | null; base64: string }> {
-    const buffer = await page.screenshot({ fullPage: true });
+    const buffer = await page.screenshot({
+      fullPage: true,
+      type: "jpeg",
+      quality: 70
+    });
     let filePath: string | null = null;
 
     if (config.storeScreenshotsLocal) {
@@ -425,11 +429,33 @@ export class TicketAutomation {
       await mkdir(dir, { recursive: true });
 
       const safeCode = codigo.replace(/[^A-Z0-9]+/gi, "-").replace(/^-|-$/g, "");
-      filePath = path.join(dir, `${safeCode}-${Date.now()}.png`);
+      filePath = path.join(dir, `${safeCode}-${Date.now()}.jpg`);
       await writeFile(filePath, buffer);
     }
 
     return { path: filePath, base64: buffer.toString("base64") };
+  }
+
+  private async captureScreenshotWithRetry(page: Page, codigo: string, attempts = 3): Promise<{ path: string | null; base64: string }> {
+    let lastError: unknown = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        if (attempt > 1) {
+          await page.waitForTimeout(500 * attempt).catch(() => undefined);
+        }
+
+        const screenshot = await this.captureScreenshot(page, codigo);
+
+        if (screenshot.base64.trim().length > 0) {
+          return screenshot;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(`Nao foi possivel capturar o comprovante do bilhete ${codigo}`);
   }
 
   private extractConfirmationCode(text: string): string | null {

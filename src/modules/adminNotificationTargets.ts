@@ -54,6 +54,10 @@ function envTargets(): AdminNotificationTarget[] {
   return [...telegramTargets, ...whatsappTargets];
 }
 
+function configuredWhatsAppTargets(): string[] {
+  return config.adminNotifications.whatsappNumbers.map((targetId) => normalizeTargetId("whatsapp", targetId));
+}
+
 function uniqueTargets(targets: AdminNotificationTarget[]): AdminNotificationTarget[] {
   const seen = new Set<string>();
   const unique: AdminNotificationTarget[] = [];
@@ -118,6 +122,7 @@ export async function loadAdminTelegramTargets(): Promise<AdminNotificationTarge
 export async function loadAdminNotificationTargets(channel?: AdminNotificationChannel): Promise<AdminNotificationTarget[]> {
   const targets = envTargets();
   const selectedTargets = channel ? targets.filter((target) => target.channel === channel) : targets;
+  const fixedWhatsAppTargets = new Set(configuredWhatsAppTargets());
 
   if (!config.databaseUrl) {
     return uniqueTargets(selectedTargets);
@@ -139,9 +144,15 @@ export async function loadAdminNotificationTargets(channel?: AdminNotificationCh
 
     for (const row of rows as Array<Record<string, any>>) {
       const rowChannel = row.channel === "whatsapp" ? "whatsapp" : "telegram";
+      const rowTargetId = String(row.target_id ?? "");
+
+      if (rowChannel === "whatsapp" && fixedWhatsAppTargets.size > 0 && !fixedWhatsAppTargets.has(normalizeTargetId("whatsapp", rowTargetId))) {
+        continue;
+      }
+
       selectedTargets.push({
         channel: rowChannel,
-        targetId: String(row.target_id ?? ""),
+        targetId: rowTargetId,
         displayName: typeof row.display_name === "string" ? row.display_name : null,
         username: typeof row.username === "string" ? row.username : null,
         source: "database"
@@ -170,6 +181,12 @@ export async function upsertAdminNotificationTarget(input: {
   displayName: string | null;
   username: string | null;
 }): Promise<void> {
+  const normalizedTargetId = normalizeTargetId(input.channel, input.targetId);
+
+  if (input.channel === "whatsapp" && configuredWhatsAppTargets().length > 0) {
+    return;
+  }
+
   await getSql()`
     INSERT INTO admin_notification_targets (
       channel,
@@ -180,7 +197,7 @@ export async function upsertAdminNotificationTarget(input: {
     )
     VALUES (
       ${input.channel},
-      ${normalizeTargetId(input.channel, input.targetId)},
+      ${normalizedTargetId},
       ${input.displayName},
       ${input.username},
       true

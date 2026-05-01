@@ -9,10 +9,11 @@ import {
 } from "./modules/adminAuth.js";
 import { prepareInboundForProcessing } from "./modules/inboundHandler.js";
 import { JobQueue } from "./modules/jobQueue.js";
+import { applyWhatsAppStatusUpdate } from "./modules/persistence.js";
 import { processValidationJob } from "./modules/processor.js";
 import { authorizeRequest, authorizeTelegramRequest } from "./modules/security.js";
 import { parseInboundTelegramMessage } from "./modules/telegramWebhookParser.js";
-import { parseInboundWhatsAppMessage } from "./modules/webhookParser.js";
+import { parseInboundWhatsAppMessage, parseWhatsAppStatusUpdates } from "./modules/webhookParser.js";
 
 const app = express();
 
@@ -291,6 +292,14 @@ app.post("/webhook/whatsapp", async (req, res) => {
   if (!(await authorizeExpressRequest(req))) {
     res.status(401).json({ ok: false, error: "unauthorized" });
     return;
+  }
+
+  const statusUpdates = parseWhatsAppStatusUpdates(req.body);
+
+  if (statusUpdates.length > 0) {
+    await Promise.all(statusUpdates.map(async (update) => {
+      await applyWhatsAppStatusUpdate(update).catch(() => false);
+    }));
   }
 
   const inbound = parseInboundWhatsAppMessage(req.body);

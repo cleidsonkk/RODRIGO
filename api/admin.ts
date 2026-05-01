@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
+import {
+  deleteAuthorizedPhoneId,
+  listAuthorizedPhoneIds,
+  setAuthorizedPhoneIdEnabled,
+  upsertAuthorizedPhoneId,
+  type AuthorizedPhoneId
+} from "../src/modules/authorizedPhoneIds.js";
 import { config } from "../src/config.js";
 import { isAdminRequestAuthorized, verifyAdminCredentials } from "../src/modules/adminAuth.js";
+import { loadRecentAdminNotificationAttempts, type AdminNotificationAttempt } from "../src/modules/adminNotificationActivity.js";
 import { clearOperationalData, deleteValidationJobById } from "../src/modules/adminCleanup.js";
 import { countAdminNotificationTargets } from "../src/modules/adminNotificationTargets.js";
 import { sendAdminTestNotification } from "../src/modules/adminNotifier.js";
@@ -152,10 +160,70 @@ async function handleAdminAction(req: any, res: any): Promise<void> {
     const result = await sendAdminTestNotification();
     redirectToAdmin(
       res,
-      result.targets > 0
-        ? `Teste enviado para ${result.targets} canal(is) administrativo(s).`
-        : "Nenhum canal administrativo cadastrado. Envie /admin sua-senha no WhatsApp ou Telegram."
+      result.attemptedTargets === 0
+        ? "Nenhum canal administrativo cadastrado. Envie /admin sua-senha no WhatsApp ou Telegram."
+        : result.targets > 0
+          ? `Teste enviado para ${result.targets} canal(is) administrativo(s). ${result.failures > 0 ? `${result.failures} envio(s) falharam.` : "Sem falhas de aceite."}`
+          : `Teste tentou enviar para ${result.attemptedTargets} canal(is) administrativo(s), mas ${result.failures} envio(s) falharam.`
     );
+    return;
+  }
+
+  if (action === "add_authorized_phone") {
+    const phone = form.get("authorizedPhone") ?? "";
+    const digits = phone.replace(/\D/g, "");
+
+    if (!digits) {
+      res.status(400).send("Numero invalido.");
+      return;
+    }
+
+    const saved = await upsertAuthorizedPhoneId(digits);
+    await recordAdminCleanupEvent(req, "admin_upsert_authorized_phone", {
+      phone: saved.phone,
+      enabled: saved.enabled
+    });
+    redirectToAdmin(res, "ID autorizado salvo com sucesso.");
+    return;
+  }
+
+  if (action === "set_authorized_phone_status") {
+    const phone = form.get("authorizedPhone") ?? "";
+    const enabled = (form.get("enabled") ?? "") === "true";
+
+    if (!phone) {
+      res.status(400).send("Numero invalido.");
+      return;
+    }
+
+    const updated = await setAuthorizedPhoneIdEnabled(phone, enabled);
+    await recordAdminCleanupEvent(req, "admin_set_authorized_phone_status", {
+      phone,
+      enabled,
+      updated
+    });
+    redirectToAdmin(res, enabled ? "ID liberado com sucesso." : "ID bloqueado com sucesso.");
+    return;
+  }
+
+  if (action === "delete_authorized_phone") {
+    if (!requireAdminPassword(form, res)) {
+      return;
+    }
+
+    const phone = form.get("authorizedPhone") ?? "";
+
+    if (!phone) {
+      res.status(400).send("Numero invalido.");
+      return;
+    }
+
+    const deleted = await deleteAuthorizedPhoneId(phone);
+    await recordAdminCleanupEvent(req, "admin_delete_authorized_phone", {
+      phone,
+      deleted
+    });
+    redirectToAdmin(res, deleted ? "Cadastro apagado com sucesso." : "Cadastro nao encontrado.");
     return;
   }
 
@@ -253,6 +321,23 @@ function formatDateOnly(value: string | null): string {
     dateStyle: "short",
     timeZone: "America/Sao_Paulo"
   }).format(date);
+}
+
+function deliveryStatusLabel(value: string | null): string {
+  switch (value) {
+    case "accepted":
+      return "aceito";
+    case "sent":
+      return "enviado";
+    case "delivered":
+      return "entregue";
+    case "read":
+      return "lido";
+    case "failed":
+      return "falhou";
+    default:
+      return "-";
+  }
 }
 
 function formatOdd(value: number | null): string {
@@ -470,8 +555,8 @@ function renderTicketDeleteForm(ticket: AdminTicket): string {
 
 function renderTicketCard(ticket: AdminTicket): string {
   const deliveryText = [
-    ticket.textSent ? "texto enviado" : "texto pendente",
-    ticket.imageSent ? "imagem enviada" : "sem imagem"
+    ticket.textSent ? `texto ${deliveryStatusLabel(ticket.textDeliveryStatus)}` : "texto pendente",
+    ticket.imageSent ? `imagem ${deliveryStatusLabel(ticket.imageDeliveryStatus)}` : "sem imagem"
   ].join(" · ");
 
   return `
@@ -582,14 +667,43 @@ function renderNotice(notice: string): string {
   return `<div class="notice" role="status">${escapeHtml(notice)}</div>`;
 }
 
-function renderAdminNotificationsPanel(targetCount: number): string {
+function renderAdminAttempts(attempts: AdminNotificationAttempt[]): string {
+  if (attempts.length === 0) {
+    return `<div class="notify-history-empty" data-notify-empty>Nenhum envio administrativo registrado ainda.</div>`;
+  }
+
+  return `
+    <div class="notify-history" data-notify-history>
+      ${attempts.map((attempt) => `
+        <article class="notify-item" data-notify-item data-created-at="${escapeHtml(attempt.createdAt)}">
+          <div class="notify-item-top">
+            <strong>${escapeHtml(attempt.channel === "whatsapp" ? "WhatsApp" : "Telegram")}</strong>
+            <span class="pill ${attempt.status === "failed" ? "bad" : attempt.status === "read" || attempt.status === "delivered" ? "ok" : "warn"}">${escapeHtml(deliveryStatusLabel(attempt.status))}</span>
+          </div>
+          <div class="notify-item-meta">
+            <span>${escapeHtml(attempt.recipientId)}</span>
+            <span>${escapeHtml(formatDate(attempt.createdAt))}</span>
+          </div>
+          <div class="notify-item-meta">
+            <span>${escapeHtml(attempt.kind)}${attempt.templateName ? ` • template ${escapeHtml(attempt.templateName)}` : ""}</span>
+            <span>${attempt.fallbackUsed ? "fallback da janela aplicado" : "envio direto"}</span>
+          </div>
+          ${attempt.errorMessage ? `<div class="notify-item-error">${escapeHtml(attempt.errorMessage)}</div>` : ""}
+        </article>
+      `).join("")}
+    </div>
+    <div class="notify-history-empty" data-notify-empty hidden>Notificacoes temporarias ocultadas da tela.</div>
+  `;
+}
+
+function renderAdminNotificationsPanel(targetCount: number, attempts: AdminNotificationAttempt[]): string {
   return `
     <section class="panel notify-panel" aria-label="Notificacoes administrativas">
       <div>
         <span class="eyebrow">Notificacoes reais</span>
         <h2>Notificacoes do administrador</h2>
         <p class="muted">
-          Para ativar no WhatsApp ou Telegram do administrador, envie <code>/admin sua-senha-do-painel</code> para o bot. Depois use o teste abaixo.
+          Para ativar no WhatsApp ou Telegram do administrador, envie <code>/admin sua-senha-do-painel</code> para o bot. O painel abaixo mostra aceite, entrega, leitura e fallback por template quando a janela da Meta estiver fechada.
         </p>
         <small>${formatInteger(targetCount)} canal(is) administrativo(s) cadastrado(s).</small>
       </div>
@@ -601,6 +715,7 @@ function renderAdminNotificationsPanel(targetCount: number): string {
         </label>
         <button type="submit">Enviar teste</button>
       </form>
+      ${renderAdminAttempts(attempts)}
     </section>
   `;
 }
@@ -628,7 +743,59 @@ function renderCleanupPanel(data: AdminDashboardData): string {
   `;
 }
 
-function renderHtml(data: AdminDashboardData, options: { notice: string; adminNotificationTargets: number }): string {
+function renderAuthorizedPhoneIdsPanel(items: AuthorizedPhoneId[]): string {
+  return `
+    <section class="panel" aria-label="IDs autorizados por celular">
+      <div class="section-heading">
+        <div>
+          <h2>IDs autorizados por celular</h2>
+          <p class="muted">Somente os numeros cadastrados podem validar bilhetes no WhatsApp. O sistema aceita automaticamente as variacoes com e sem nono digito.</p>
+        </div>
+        <small>${formatInteger(items.length)} cadastro(s)</small>
+      </div>
+
+      <form method="post" action="/api/admin" class="authorized-create-form">
+        <input type="hidden" name="action" value="add_authorized_phone">
+        <label>
+          <span>Numero do celular</span>
+          <input name="authorizedPhone" inputmode="numeric" placeholder="Ex.: 5579999105302" required>
+        </label>
+        <button type="submit">Salvar ID autorizado</button>
+      </form>
+
+      <div class="authorized-list">
+        ${items.length === 0 ? `<div class="empty-block">Nenhum ID autorizado cadastrado ainda.</div>` : items.map((item) => `
+          <article class="authorized-card">
+            <div>
+              <strong>${escapeHtml(item.phone)}</strong>
+              <small>Status: ${item.enabled ? "Liberado" : "Bloqueado"}</small>
+              <small>Criado em ${escapeHtml(formatDate(item.createdAt))} · Atualizado em ${escapeHtml(formatDate(item.updatedAt))}</small>
+            </div>
+            <div class="authorized-actions">
+              <form method="post" action="/api/admin">
+                <input type="hidden" name="action" value="set_authorized_phone_status">
+                <input type="hidden" name="authorizedPhone" value="${escapeHtml(item.phone)}">
+                <input type="hidden" name="enabled" value="${item.enabled ? "false" : "true"}">
+                <button type="submit" class="${item.enabled ? "button secondary" : "button ghost"}">${item.enabled ? "Bloquear" : "Liberar"}</button>
+              </form>
+              <form method="post" action="/api/admin" class="authorized-delete-form" onsubmit="return confirm('Apagar este cadastro autorizado?');">
+                <input type="hidden" name="action" value="delete_authorized_phone">
+                <input type="hidden" name="authorizedPhone" value="${escapeHtml(item.phone)}">
+                <label>
+                  <span>Senha do administrador</span>
+                  <input type="password" name="adminPassword" autocomplete="current-password" placeholder="Senha para apagar" required>
+                </label>
+                <button type="submit" class="danger-button">Apagar cadastro</button>
+              </form>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderHtml(data: AdminDashboardData, options: { notice: string; adminNotificationTargets: number; adminAttempts: AdminNotificationAttempt[]; authorizedPhoneIds: AuthorizedPhoneId[] }): string {
   const averageTicket = data.totals.tickets > 0 ? data.totals.amount / data.totals.tickets : 0;
   const lastUpdate = formatDate(data.generatedAt);
   const dataUrl = buildAdminUrl(data, { format: "json" });
@@ -770,6 +937,57 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
       gap: 8px;
       min-width: 0;
     }
+    .notify-history {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+    .notify-history-empty {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .notify-item {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-soft);
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+      opacity: 1;
+      transform: translateY(0);
+      transition: opacity .35s ease, transform .35s ease, max-height .35s ease, margin .35s ease, padding .35s ease, border-width .35s ease;
+      max-height: 220px;
+      overflow: hidden;
+    }
+    .notify-item.is-expiring {
+      opacity: .55;
+    }
+    .notify-item.is-hidden {
+      opacity: 0;
+      transform: translateY(-6px);
+      max-height: 0;
+      margin: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-width: 0;
+    }
+    .notify-item-top, .notify-item-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .notify-item-meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .notify-item-error {
+      color: var(--danger);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
     .notice {
       border: 1px solid #b6ded8;
       border-radius: 8px;
@@ -778,6 +996,44 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
       font-weight: 800;
       margin-bottom: 14px;
       padding: 10px 12px;
+    }
+    .authorized-create-form {
+      display: grid;
+      grid-template-columns: minmax(220px, 320px) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+    .authorized-list {
+      display: grid;
+      gap: 10px;
+    }
+    .authorized-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-soft);
+    }
+    .authorized-card strong,
+    .authorized-card small {
+      display: block;
+    }
+    .authorized-actions {
+      display: grid;
+      gap: 8px;
+      justify-items: stretch;
+      min-width: min(100%, 240px);
+    }
+    .authorized-actions form {
+      display: grid;
+      gap: 8px;
+    }
+    .authorized-delete-form {
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
     }
     .cleanup-form, .danger-form {
       display: grid;
@@ -1094,6 +1350,10 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
       .live, .logout { flex: 1 1 130px; }
       h1 { font-size: 22px; }
       .filters, .notify-panel, .cleanup-panel, .metrics, .split, .ticket-grid, .message-grid { grid-template-columns: 1fr; }
+      .authorized-create-form,
+      .authorized-card {
+        grid-template-columns: 1fr;
+      }
       .filters {
         gap: 8px;
         padding: 10px;
@@ -1195,7 +1455,8 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
 
     ${renderFilters(data)}
     ${renderNotice(options.notice)}
-    ${renderAdminNotificationsPanel(options.adminNotificationTargets)}
+    ${renderAdminNotificationsPanel(options.adminNotificationTargets, options.adminAttempts)}
+    ${renderAuthorizedPhoneIdsPanel(options.authorizedPhoneIds)}
     ${renderCleanupPanel(data)}
 
     <section class="metrics" aria-label="Indicadores">
@@ -1258,6 +1519,40 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
       const dataUrl = ${JSON.stringify(dataUrl)};
       const status = document.getElementById("live-status");
       const lastUpdate = document.getElementById("last-update");
+      const notificationLifetimeMs = 60 * 1000;
+
+      function updateAdminNotificationVisibility() {
+        const items = Array.from(document.querySelectorAll("[data-notify-item]"));
+        const emptyState = document.querySelector("[data-notify-empty]");
+        const now = Date.now();
+        let visibleCount = 0;
+
+        for (const item of items) {
+          const createdAt = item.getAttribute("data-created-at");
+          const createdAtMs = createdAt ? Date.parse(createdAt) : NaN;
+          const ageMs = Number.isFinite(createdAtMs) ? now - createdAtMs : 0;
+
+          item.classList.remove("is-expiring", "is-hidden");
+
+          if (ageMs >= notificationLifetimeMs) {
+            item.classList.add("is-hidden");
+            continue;
+          }
+
+          if (ageMs >= notificationLifetimeMs - 30000) {
+            item.classList.add("is-expiring");
+          }
+
+          visibleCount += 1;
+        }
+
+        if (emptyState instanceof HTMLElement) {
+          emptyState.hidden = visibleCount > 0;
+          emptyState.textContent = visibleCount === 0
+            ? "Notificacoes temporarias ocultadas da tela."
+            : "Nenhum envio administrativo registrado ainda.";
+        }
+      }
 
       async function checkForUpdates() {
         try {
@@ -1292,7 +1587,9 @@ function renderHtml(data: AdminDashboardData, options: { notice: string; adminNo
         }
       }
 
+      updateAdminNotificationVisibility();
       window.setInterval(checkForUpdates, 8000);
+      window.setInterval(updateAdminNotificationVisibility, 1000);
     })();
   </script>
 </body>
@@ -1348,10 +1645,14 @@ export default async function handler(req: any, res: any): Promise<void> {
       return;
     }
 
-    const adminNotificationTargets = await countAdminNotificationTargets();
+    const [adminNotificationTargets, adminAttempts, authorizedPhoneIds] = await Promise.all([
+      countAdminNotificationTargets(),
+      loadRecentAdminNotificationAttempts(),
+      listAuthorizedPhoneIds()
+    ]);
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(200).send(renderHtml(data, { notice, adminNotificationTargets }));
+    res.status(200).send(renderHtml(data, { notice, adminNotificationTargets, adminAttempts, authorizedPhoneIds }));
   } catch (error) {
     console.error(error);
     res.status(500).send("Erro ao carregar o painel administrativo.");

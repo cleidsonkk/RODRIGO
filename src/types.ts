@@ -75,3 +75,31 @@ export type ValidationJob = {
   raw: unknown;
   createdAt: string;
 };
+
+export type DeliveryStatus = "accepted" | "sent" | "delivered" | "read" | "failed" | "unknown";
+
+export type OutboundMessageKind = "text" | "image" | "template";
+
+export type OutboundSendResult = {
+  channel: "whatsapp" | "telegram";
+  provider: string;
+  recipientId: string;
+  kind: OutboundMessageKind;
+  providerMessageId: string | null;
+  status: DeliveryStatus;
+  templateName?: string | null;
+  fallbackUsed?: boolean;
+  raw: unknown;
+};
+
+export type WhatsAppStatusUpdate = {
+  providerMessageId: string;
+  recipientId: string | null;
+  status: DeliveryStatus;
+  timestamp: string | null;
+  errorCode: string | null;
+  errorTitle: string | null;
+  errorMessage: string | null;
+  conversationCategory: string | null;
+  raw: unknown;
+};

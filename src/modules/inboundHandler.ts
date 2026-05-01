@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { checkAuthorizedPhoneId } from "./authorizedPhoneIds.js";
 import { config } from "../config.js";
 import { log } from "../logger.js";
 import type { InboundMessage, ValidationJob } from "../types.js";
@@ -38,6 +39,19 @@ export async function prepareInboundForProcessing(inbound: InboundMessage): Prom
       error: error instanceof Error ? error.message : String(error)
     });
   });
+
+  if (inbound.channel === "whatsapp") {
+    const authorized = await checkAuthorizedPhoneId(inbound.recipientId);
+
+    if (!authorized.allowed) {
+      const message = authorized.reason === "blocked"
+        ? "Seu numero esta temporariamente bloqueado para validar bilhetes. Se precisar de suporte, fale com o administrador."
+        : "Seu numero nao esta cadastrado para validar bilhetes neste atendimento. Solicite a liberacao ao administrador.";
+
+      await sendText(inbound.channel, inbound.recipientId, message);
+      return { kind: "ignored", reason: authorized.reason };
+    }
+  }
 
   if (isTelegramContactMessage(inbound)) {
     const result = await upsertTelegramContact(inbound);

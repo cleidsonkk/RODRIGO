@@ -31,7 +31,9 @@ ALTER TABLE validation_jobs
 ALTER TABLE validation_jobs
   ADD COLUMN IF NOT EXISTS ticket_amount numeric(12,2),
   ADD COLUMN IF NOT EXISTS ticket_prize numeric(12,2),
-  ADD COLUMN IF NOT EXISTS ticket_game_count integer;
+  ADD COLUMN IF NOT EXISTS ticket_game_count integer,
+  ADD COLUMN IF NOT EXISTS customer_text_delivery_status text,
+  ADD COLUMN IF NOT EXISTS customer_image_delivery_status text;
 
 DROP INDEX IF EXISTS validation_jobs_external_message_id_idx;
 
@@ -134,3 +136,49 @@ CREATE TABLE IF NOT EXISTS admin_notification_targets (
 
 CREATE INDEX IF NOT EXISTS admin_notification_targets_enabled_idx
   ON admin_notification_targets (channel, enabled, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS authorized_phone_ids (
+  phone text PRIMARY KEY,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS authorized_phone_ids_enabled_idx
+  ON authorized_phone_ids (enabled, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS outbound_notifications (
+  id uuid PRIMARY KEY,
+  scope text NOT NULL,
+  channel text NOT NULL,
+  recipient_id text NOT NULL,
+  job_id uuid REFERENCES validation_jobs(id) ON DELETE SET NULL,
+  admin_target_channel text,
+  admin_target_id text,
+  kind text NOT NULL,
+  provider text NOT NULL,
+  provider_message_id text,
+  template_name text,
+  fallback_used boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'accepted',
+  error_message text,
+  last_status_at timestamptz,
+  delivered_at timestamptz,
+  read_at timestamptz,
+  failed_at timestamptz,
+  payload jsonb,
+  last_webhook_payload jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS outbound_notifications_provider_message_idx
+  ON outbound_notifications (provider, provider_message_id)
+  WHERE provider_message_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS outbound_notifications_scope_created_at_idx
+  ON outbound_notifications (scope, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS outbound_notifications_job_id_idx
+  ON outbound_notifications (job_id, created_at DESC)
+  WHERE job_id IS NOT NULL;

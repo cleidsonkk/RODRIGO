@@ -4,7 +4,8 @@ import { processValidationJob } from "../../src/modules/processor.js";
 import { authorizeRequest } from "../../src/modules/security.js";
 import { config } from "../../src/config.js";
 import { sendText } from "../../src/modules/notifier.js";
-import { parseInboundWhatsAppMessage } from "../../src/modules/webhookParser.js";
+import { applyWhatsAppStatusUpdate } from "../../src/modules/persistence.js";
+import { parseInboundWhatsAppMessage, parseWhatsAppStatusUpdates } from "../../src/modules/webhookParser.js";
 
 export default async function handler(req: any, res: any): Promise<void> {
   if (req.method === "GET") {
@@ -26,17 +27,25 @@ export default async function handler(req: any, res: any): Promise<void> {
     return;
   }
 
-  if (req.headers["x-webhook-secret"]) {
-    const authorized = await authorizeRequest({
-      ip: String(req.headers["x-forwarded-for"] ?? req.socket?.remoteAddress ?? "").split(",")[0].trim(),
-      userAgent: String(req.headers["user-agent"] ?? ""),
-      getHeader: (name) => req.headers[name.toLowerCase()] as string | undefined
-    });
+  const authorized = await authorizeRequest({
+    ip: String(req.headers["x-forwarded-for"] ?? req.socket?.remoteAddress ?? "").split(",")[0].trim(),
+    userAgent: String(req.headers["user-agent"] ?? ""),
+    getHeader: (name) => req.headers[name.toLowerCase()] as string | undefined
+  }, {
+    requireSharedSecret: config.whatsapp.provider !== "meta"
+  });
 
-    if (!authorized) {
-      res.status(401).json({ ok: false, error: "unauthorized" });
-      return;
-    }
+  if (!authorized) {
+    res.status(401).json({ ok: false, error: "unauthorized" });
+    return;
+  }
+
+  const statusUpdates = parseWhatsAppStatusUpdates(req.body);
+
+  if (statusUpdates.length > 0) {
+    await Promise.all(statusUpdates.map(async (update) => {
+      await applyWhatsAppStatusUpdate(update).catch(() => false);
+    }));
   }
 
   const inbound = parseInboundWhatsAppMessage(req.body);

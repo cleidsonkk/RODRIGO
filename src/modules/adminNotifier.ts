@@ -8,6 +8,7 @@ import {
 } from "./adminNotificationTargets.js";
 import { extractTicketFinancials, formatMoney, getCustomerCreditSummary, type CustomerCreditSummary } from "./credit.js";
 import { customerIdentityFromInbound, formatPhoneNumber, getCustomerProfile } from "./customerProfile.js";
+import { recordOutboundNotificationSafely } from "./persistence.js";
 import { TelegramClient } from "./telegram.js";
 import { WhatsAppClient } from "./whatsapp.js";
 
@@ -16,8 +17,10 @@ const whatsapp = new WhatsAppClient();
 const TELEGRAM_MESSAGE_LIMIT = 3900;
 
 type SendAdminMessageResult = {
+  attemptedTargets: number;
   targets: number;
   messages: number;
+  failures: number;
 };
 
 type RawRow = Record<string, any>;
@@ -203,26 +206,83 @@ async function sendAdminMessage(text: string): Promise<SendAdminMessageResult> {
     log("warn", "Nenhum destino administrativo configurado", {
       hint: "Envie /admin <senha-do-painel> no Telegram/WhatsApp para ativar as notificacoes."
     });
-    return { targets: 0, messages: 0 };
+    return { attemptedTargets: 0, targets: 0, messages: 0, failures: 0 };
   }
 
   const chunks = splitMessage(text);
+  let successTargets = 0;
+  let successMessages = 0;
+  let failures = 0;
 
   await Promise.all(targets.map(async (target) => {
+    let targetSucceeded = true;
+
     for (const chunk of chunks) {
-      if (target.channel === "telegram") {
-        await telegram.sendText(target.targetId, chunk);
-      } else {
-        await whatsapp.sendText(target.targetId, chunk);
+      try {
+        const result = target.channel === "telegram"
+          ? await telegram.sendText(target.targetId, chunk)
+          : await whatsapp.sendText(target.targetId, chunk, {
+            templateFallback: config.adminNotifications.whatsappTemplateName
+              ? {
+                name: config.adminNotifications.whatsappTemplateName,
+                languageCode: config.adminNotifications.whatsappTemplateLanguage
+              }
+              : null
+          });
+
+        await recordOutboundNotificationSafely({
+          scope: "admin",
+          recipientId: target.targetId,
+          channel: target.channel,
+          kind: result.kind,
+          result,
+          adminTargetChannel: target.channel,
+          adminTargetId: target.targetId
+        });
+        successMessages += 1;
+      } catch (error) {
+        targetSucceeded = false;
+        failures += 1;
+        log("warn", "Falha ao enviar notificacao administrativa", {
+          channel: target.channel,
+          targetId: target.targetId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        await recordOutboundNotificationSafely({
+          scope: "admin",
+          recipientId: target.targetId,
+          channel: target.channel,
+          kind: "text",
+          result: {
+            channel: target.channel,
+            provider: target.channel,
+            recipientId: target.targetId,
+            kind: "text",
+            providerMessageId: null,
+            status: "failed",
+            raw: {
+              error: error instanceof Error ? error.message : String(error)
+            }
+          },
+          adminTargetChannel: target.channel,
+          adminTargetId: target.targetId,
+          errorMessage: error instanceof Error ? error.message : String(error)
+        });
+        break;
       }
     }
 
-    await markAdminNotificationTargetNotified(target.channel, target.targetId);
+    if (targetSucceeded) {
+      successTargets += 1;
+      await markAdminNotificationTargetNotified(target.channel, target.targetId);
+    }
   }));
 
   return {
-    targets: targets.length,
-    messages: targets.length * chunks.length
+    attemptedTargets: targets.length,
+    targets: successTargets,
+    messages: successMessages,
+    failures
   };
 }
 

@@ -9,6 +9,10 @@ export type RequestSecurityContext = {
   getHeader: (name: string) => string | undefined | null;
 };
 
+export type RequestSecurityOptions = {
+  requireSharedSecret?: boolean;
+};
+
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
@@ -24,10 +28,17 @@ function isAllowedIp(ip: string): boolean {
   return config.webhookAllowedIps.length === 0 || config.webhookAllowedIps.includes(ip);
 }
 
-export async function authorizeRequest(context: RequestSecurityContext): Promise<boolean> {
+export async function authorizeRequest(
+  context: RequestSecurityContext,
+  options: RequestSecurityOptions = {}
+): Promise<boolean> {
   if (!isAllowedIp(context.ip)) {
     await deny("ip_nao_permitido", context, { ip: context.ip });
     return false;
+  }
+
+  if (options.requireSharedSecret === false) {
+    return true;
   }
 
   if (!config.webhookSecret) {

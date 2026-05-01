@@ -1,4 +1,5 @@
-import type { InboundMessage } from "../types.js";
+import type { InboundMessage, WhatsAppStatusUpdate } from "../types.js";
+import { canonicalAuthorizedPhone } from "./authorizedPhoneIds.js";
 
 function pickString(...values: unknown[]): string {
   for (const value of values) {
@@ -12,7 +13,7 @@ function pickString(...values: unknown[]): string {
 
 function normalizePhone(raw: string): string {
   const remoteJid = raw.split("@")[0] ?? raw;
-  return remoteJid.replace(/\D/g, "");
+  return canonicalAuthorizedPhone(remoteJid);
 }
 
 function parseMetaCloudMessage(payload: Record<string, any>): InboundMessage | null {
@@ -49,6 +50,63 @@ function parseMetaCloudMessage(payload: Record<string, any>): InboundMessage | n
     raw: payload,
     contactFirstName: profileName || null
   };
+}
+
+function parseMetaTimestamp(raw: unknown): string | null {
+  if (typeof raw === "string" && /^\d+$/.test(raw)) {
+    const seconds = Number.parseInt(raw, 10);
+    return Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null;
+  }
+
+  return null;
+}
+
+export function parseWhatsAppStatusUpdates(body: unknown): WhatsAppStatusUpdate[] {
+  if (!body || typeof body !== "object") {
+    return [];
+  }
+
+  const payload = body as Record<string, any>;
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const updates: WhatsAppStatusUpdate[] = [];
+
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+
+    for (const change of changes) {
+      const value = change?.value;
+      const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
+
+      for (const status of statuses) {
+        const providerMessageId = pickString(status?.id);
+
+        if (!providerMessageId) {
+          continue;
+        }
+
+        const errors = Array.isArray(status?.errors) ? status.errors : [];
+        const firstError = errors[0] ?? {};
+        const rawStatus = pickString(status?.status).toLowerCase();
+        const normalized = rawStatus === "sent" || rawStatus === "delivered" || rawStatus === "read" || rawStatus === "failed"
+          ? rawStatus
+          : "unknown";
+
+        updates.push({
+          providerMessageId,
+          recipientId: pickString(status?.recipient_id) || null,
+          status: normalized,
+          timestamp: parseMetaTimestamp(status?.timestamp),
+          errorCode: pickString(firstError?.code) || null,
+          errorTitle: pickString(firstError?.title) || null,
+          errorMessage: pickString(firstError?.message, firstError?.error_data?.details) || null,
+          conversationCategory: pickString(status?.conversation?.origin?.type) || null,
+          raw: status
+        });
+      }
+    }
+  }
+
+  return updates;
 }
 
 export function parseInboundWhatsAppMessage(body: unknown): InboundMessage | null {

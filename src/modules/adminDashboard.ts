@@ -55,6 +55,8 @@ export type AdminTicket = {
   errorMessage: string | null;
   textSent: boolean;
   imageSent: boolean;
+  textDeliveryStatus: string | null;
+  imageDeliveryStatus: string | null;
   deliveryError: string | null;
 };
 
@@ -235,6 +237,8 @@ function normalizeTicket(row: RawRow): AdminTicket {
     errorMessage: nullableString(row.error_message),
     textSent: Boolean(row.text_sent),
     imageSent: Boolean(row.image_sent),
+    textDeliveryStatus: nullableString(row.customer_text_delivery_status),
+    imageDeliveryStatus: nullableString(row.customer_image_delivery_status),
     deliveryError: nullableString(row.delivery_error)
   };
 }
@@ -382,6 +386,8 @@ export async function loadAdminDashboardData(input: {
       validation_jobs.error_message,
       validation_jobs.text_sent,
       validation_jobs.image_sent,
+      validation_jobs.customer_text_delivery_status,
+      validation_jobs.customer_image_delivery_status,
       validation_jobs.delivery_error,
       validation_jobs.raw_payload,
       validation_jobs.result_payload,

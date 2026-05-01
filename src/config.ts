@@ -56,7 +56,9 @@ export const config = {
   adminNotifications: {
     telegramChatIds: listFromEnv(process.env.ADMIN_TELEGRAM_CHAT_IDS),
     whatsappNumbers: listFromEnv(process.env.ADMIN_WHATSAPP_NUMBERS),
-    lowCreditPercent: floatFromEnv(process.env.ADMIN_LOW_CREDIT_PERCENT, 20)
+    lowCreditPercent: floatFromEnv(process.env.ADMIN_LOW_CREDIT_PERCENT, 20),
+    whatsappTemplateName: process.env.ADMIN_WHATSAPP_TEMPLATE_NAME ?? "",
+    whatsappTemplateLanguage: process.env.ADMIN_WHATSAPP_TEMPLATE_LANGUAGE ?? "pt_BR"
   },
   whatsapp: {
     provider: (process.env.WHATSAPP_PROVIDER ?? "none").toLowerCase(),
