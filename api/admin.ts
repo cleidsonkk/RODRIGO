@@ -760,11 +760,11 @@ function renderAuthorizedPhoneIdsPanel(items: AuthorizedPhoneId[]): string {
         <input type="hidden" name="action" value="add_authorized_phone">
         <label>
           <span>Numero do celular</span>
-          <input name="authorizedPhone" inputmode="numeric" placeholder="Ex.: 5579999105302" required>
+          <input name="authorizedPhone" inputmode="numeric" placeholder="Ex.: 5579991234567" required>
         </label>
         <label>
           <span>Nome</span>
-          <input name="authorizedPhoneName" placeholder="Ex.: Neno">
+          <input name="authorizedPhoneName" placeholder="Ex.: Rodrigo">
         </label>
         <button type="submit">Salvar ID autorizado</button>
       </form>
