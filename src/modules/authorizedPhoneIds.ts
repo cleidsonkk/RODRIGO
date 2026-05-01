@@ -163,16 +163,6 @@ export async function checkAuthorizedPhoneId(phone: string): Promise<AuthorizedP
     return { allowed: true, matchedPhone: null };
   }
 
-  const totalRows = await getSql().query(`
-    SELECT COUNT(*)::int AS total
-    FROM authorized_phone_ids
-  `);
-  const total = Number(totalRows[0]?.total ?? 0);
-
-  if (total <= 0) {
-    return { allowed: true, matchedPhone: null };
-  }
-
   const variants = expandAuthorizedPhoneVariants(phone);
 
   if (variants.length === 0) {
